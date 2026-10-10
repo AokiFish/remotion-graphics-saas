@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { useGenerationApi } from "@/hooks/useGenerationApi";
 import { cn } from "@/lib/utils";
+import { useModels } from "@/hooks/useModels";
 import type {
   AssistantMetadata,
   ConversationContextMessage,
@@ -11,7 +12,6 @@ import type {
   ErrorCorrectionContext,
 } from "@/types/conversation";
 import {
-  MODELS,
   type GenerationErrorType,
   type ModelId,
   type StreamPhase,
@@ -72,6 +72,8 @@ interface ChatSidebarProps {
   errorCorrection?: ErrorCorrectionContext;
   onPendingMessage?: (skills?: string[]) => void;
   onClearPendingMessage?: () => void;
+  /** Model id passed from the landing page (via URL) to preselect. */
+  initialModelId?: string;
   // Frame capture props
   Component?: ComponentType | null;
   fps?: number;
@@ -103,6 +105,7 @@ export const ChatSidebar = forwardRef<ChatSidebarRef, ChatSidebarProps>(
       errorCorrection,
       onPendingMessage,
       onClearPendingMessage,
+      initialModelId,
       Component,
       fps = 30,
       durationInFrames = 150,
@@ -110,8 +113,16 @@ export const ChatSidebar = forwardRef<ChatSidebarRef, ChatSidebarProps>(
     },
     ref,
   ) {
-    const [model, setModel] = useState<ModelId>(MODELS[1].id);
+    const { models, default: defaultModel } = useModels();
+    const [model, setModel] = useState<ModelId>("");
     const promptRef = useRef<string>("");
+
+    // Select the preselected (URL) model or the configured default once loaded.
+    useEffect(() => {
+      if (!model && (initialModelId || defaultModel)) {
+        setModel(initialModelId || defaultModel);
+      }
+    }, [initialModelId, defaultModel, model]);
 
     const { isLoading, runGeneration } = useGenerationApi();
 
@@ -229,6 +240,7 @@ export const ChatSidebar = forwardRef<ChatSidebarRef, ChatSidebarProps>(
               model={model}
               onModelChange={setModel}
               isLoading={isLoading}
+              models={models}
               onSubmit={(attachedImages) =>
                 handleGeneration({ attachedImages })
               }

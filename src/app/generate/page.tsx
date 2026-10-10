@@ -25,6 +25,7 @@ const MAX_CORRECTION_ATTEMPTS = 3;
 function GeneratePageContent() {
   const searchParams = useSearchParams();
   const initialPrompt = searchParams.get("prompt") || "";
+  const initialModelId = searchParams.get("model") || undefined;
 
   // If we have an initial prompt from URL, start in streaming state
   // so syntax highlighting is disabled from the beginning
@@ -40,7 +41,6 @@ function GeneratePageContent() {
     willAutoStart ? "reasoning" : "idle",
   );
   const [prompt, setPrompt] = useState(initialPrompt);
-  const [hasAutoStarted, setHasAutoStarted] = useState(false);
   const [hasGeneratedOnce, setHasGeneratedOnce] = useState(false);
   const [generationError, setGenerationError] = useState<{
     message: string;
@@ -227,28 +227,30 @@ function GeneratePageContent() {
     setRuntimeError(errorMessage);
   }, []);
 
-  // Auto-trigger generation if prompt came from URL
+  // Auto-trigger generation if prompt came from URL (exactly once).
+  // Use clearTimeout cleanup so a remount (e.g. under Suspense / useSearchParams)
+  // can't leave a dangling timer that fires a second time and duplicates the
+  // user message.
   useEffect(() => {
-    if (initialPrompt && !hasAutoStarted && chatSidebarRef.current) {
-      setHasAutoStarted(true);
-      // Check for initial attached images from sessionStorage
-      const storedImagesJson = sessionStorage.getItem("initialAttachedImages");
-      let storedImages: string[] | undefined;
-      if (storedImagesJson) {
-        try {
-          storedImages = JSON.parse(storedImagesJson);
-        } catch {
-          // Ignore parse errors
-        }
-        sessionStorage.removeItem("initialAttachedImages");
+    if (!initialPrompt) return;
+    // Check for initial attached images from sessionStorage
+    const storedImagesJson = sessionStorage.getItem("initialAttachedImages");
+    let storedImages: string[] | undefined;
+    if (storedImagesJson) {
+      try {
+        storedImages = JSON.parse(storedImagesJson);
+      } catch {
+        // Ignore parse errors
       }
-      setTimeout(() => {
-        chatSidebarRef.current?.triggerGeneration({
-          attachedImages: storedImages,
-        });
-      }, 100);
+      sessionStorage.removeItem("initialAttachedImages");
     }
-  }, [initialPrompt, hasAutoStarted]);
+    const timer = setTimeout(() => {
+      chatSidebarRef.current?.triggerGeneration({
+        attachedImages: storedImages,
+      });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [initialPrompt]);
 
   return (
     <PageLayout showLogoAsLink>
@@ -278,6 +280,7 @@ function GeneratePageContent() {
           errorCorrection={errorCorrection ?? undefined}
           onPendingMessage={setPendingMessage}
           onClearPendingMessage={clearPendingMessage}
+          initialModelId={initialModelId}
           // Frame capture props
           Component={Component}
           fps={fps}

@@ -7,6 +7,14 @@ import type {
 } from "@/types/conversation";
 import { useCallback, useRef, useState } from "react";
 
+// Monotonic counter guarantees unique ids even when two messages are created
+// within the same millisecond (which breaks `user-${Date.now()}` keys).
+let messageIdSeq = 0;
+function createMessageId(role: "user" | "assistant" | "error"): string {
+  messageIdSeq += 1;
+  return `${role}-${Date.now()}-${messageIdSeq}`;
+}
+
 export function useConversationState() {
   const [state, setState] = useState<ConversationState>({
     messages: [],
@@ -21,7 +29,7 @@ export function useConversationState() {
   const addUserMessage = useCallback(
     (content: string, attachedImages?: string[]) => {
       const message: ConversationMessage = {
-        id: `user-${Date.now()}`,
+        id: createMessageId("user"),
         role: "user",
         content,
         timestamp: Date.now(),
@@ -39,7 +47,7 @@ export function useConversationState() {
   const addAssistantMessage = useCallback(
     (content: string, codeSnapshot: string, metadata?: AssistantMetadata) => {
       const message: ConversationMessage = {
-        id: `assistant-${Date.now()}`,
+        id: createMessageId("assistant"),
         role: "assistant",
         content,
         timestamp: Date.now(),
@@ -65,7 +73,7 @@ export function useConversationState() {
       failedEdit?: EditOperation,
     ) => {
       const message: ConversationMessage = {
-        id: `error-${Date.now()}`,
+        id: createMessageId("error"),
         role: "error",
         content,
         timestamp: Date.now(),

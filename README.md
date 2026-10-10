@@ -51,6 +51,47 @@ Uses a one-shot prompt with the base Remotion knowledge plus any detected skills
 
 The response is cleaned (removing markdown wrappers and trailing commentary), then compiled in-browser using Babel. The compiled component renders directly in the Remotion Preview with all necessary APIs injected.
 
+## Model Providers
+
+The available models are no longer hardcoded. They are configured in **`models.json`** (project root) and served to the UI via `/api/models`. Any OpenAI-compatible provider can be added — OpenAI, OpenRouter, Agnes, DeepSeek, Grok, local gateways, etc.
+
+### `models.json` structure
+
+```jsonc
+{
+  "defaultModel": "gpt-5.2:low",   // preselected in the UI
+  "auxModel": "gpt-5.2",           // cheap model for validation / skill detection
+  "providers": {
+    "openai": {
+      "label": "OpenAI",
+      "type": "openai",             // "openai" = OpenAI-compatible chat completions
+      "baseURL": "https://api.openai.com/v1",
+      "apiKeyEnv": "OPENAI_API_KEY" // read from process.env at request time
+    },
+    "openrouter": { "label": "OpenRouter", "type": "openai", "baseURL": "https://openrouter.ai/api/v1", "apiKeyEnv": "OPENROUTER_API_KEY" },
+    "agnes": { "label": "Agnes", "type": "openai", "baseURL": "https://apihub.agnes-ai.com/v1", "apiKeyEnv": "AGNES_API_KEY" }
+  },
+  "models": [
+    { "id": "gpt-5.2", "provider": "openai", "label": "GPT-5.2", "reasoningEfforts": ["none","low","medium","high"] },
+    { "id": "anthropic/claude-3.5-sonnet", "provider": "openrouter", "label": "Claude 3.5 Sonnet" },
+    { "id": "Agnes-3.0-Flash", "provider": "agnes", "label": "Agnes 3.0 Flash" }
+  ]
+}
+```
+
+- `provider.type` is currently `"openai"`, which covers any OpenAI-compatible endpoint — just point `baseURL` at it and set `apiKeyEnv`.
+- `model.id` is the exact string sent to the provider (may contain slashes, e.g. `anthropic/claude-3.5-sonnet`).
+- `reasoningEfforts` (optional) expands one model into multiple selectable options (`id:effort`); the suffix is forwarded via the OpenAI `reasoningEffort` provider option.
+- API keys live in `.env` (see `.env.example`); only the providers you use need a value. Missing a key returns a clear 400 at request time.
+
+### Add a new provider
+
+1. Add a key to `.env` (e.g. `DEEPSEEK_API_KEY=...`).
+2. Add a `providers.<name>` entry in `models.json` with its `baseURL` and `apiKeyEnv`.
+3. Add one or more `models` entries referencing that provider.
+
+No code changes are required.
+
 ## Skills System
 
 Skills enable contextual expertise without bloating every prompt. Located in `src/skills/`:

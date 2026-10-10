@@ -1,0 +1,63 @@
+{
+  "defaultModel": "gpt-5.2:low",
+  "auxModel": "gpt-5.2",
+  "providers": {
+    "openai": {
+      "label": "OpenAI",
+      "type": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKeyEnv": "OPENAI_API_KEY"
+    },
+    "openrouter": {
+      "label": "OpenRouter",
+      "type": "openai",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    },
+    "agnes": {
+      "label": "Agnes",
+      "type": "openai",
+      "baseURL": "https://apihub.agnes-ai.com/v1",
+      "apiKeyEnv": "AGNES_API_KEY"
+    }
+  },
+  "models": [
+    {
+      "id": "gpt-5.2",
+      "provider": "openai",
+      "label": "GPT-5.2",
+      "reasoningEfforts": ["none", "low", "medium", "high"]
+    },
+    {
+      "id": "gpt-5.2-pro",
+      "provider": "openai",
+      "label": "GPT-5.2 Pro",
+      "reasoningEfforts": ["medium", "high", "xhigh"]
+    },
+    {
+      "id": "anthropic/claude-3.5-sonnet",
+      "provider": "openrouter",
+      "label": "Claude 3.5 Sonnet (OpenRouter)"
+    },
+    {
+      "id": "google/gemini-2.5-pro",
+      "provider": "openrouter",
+      "label": "Gemini 2.5 Pro (OpenRouter)"
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "provider": "openrouter",
+      "label": "GPT-4o mini (OpenRouter)"
+    },
+    {
+      "id": "agnes-2.5-flash",
+      "provider": "agnes",
+      "label": "Agnes 2.5 Flash"
+    },
+    {
+      "id": "agnes-3.0-flash",
+      "provider": "agnes",
+      "label": "Agnes 3.0 Flash"
+    }
+  ]
+}

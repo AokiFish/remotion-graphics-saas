@@ -37,3 +37,6 @@ next-env.d.ts
 out/
 .env
 build
+
+# local AI workspace notes
+.workbuddy/

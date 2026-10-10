@@ -4,9 +4,15 @@ import {
   SKILL_NAMES,
   type SkillName,
 } from "@/skills";
-import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject, streamText } from "ai";
 import { z } from "zod";
+import {
+  ApiKeyMissingError,
+  defaultModel,
+  ModelNotFoundError,
+  resolveAuxModel,
+  resolveModel,
+} from "@/lib/models";
 
 const VALIDATION_PROMPT = `You are a prompt classifier for a motion graphics generation tool.
 
@@ -101,6 +107,8 @@ NEVER use these as variable names - they shadow imports:
 
 - Output ONLY code - no explanations, no questions
 - Response must start with "import" and end with "};"
+- The code must contain EXACTLY ONE top-level component: \`export const MyAnimation = () => { ... };\`
+- NEVER wrap your component inside another component (no \`const Wrapper = () => { const MyAnimation = () => {...} }\`). NEVER nest an \`export\` inside a function body.
 - If prompt is ambiguous, make a reasonable choice - do not ask for clarification
 
 `;
@@ -297,7 +305,7 @@ interface GenerateResponse {
 export async function POST(req: Request) {
   const {
     prompt,
-    model = "gpt-5.2",
+    model = defaultModel,
     currentCode,
     conversationHistory = [],
     isFollowUp = false,
@@ -307,31 +315,37 @@ export async function POST(req: Request) {
     frameImages,
   }: GenerateRequest = await req.json();
 
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({
-        error:
-          'The environment variable "OPENAI_API_KEY" is not set. Add it to your .env file and try again.',
-      }),
-      {
+  // Resolve the requested model to a provider instance.
+  // The API key is read from process.env based on models.json (missing key => 400).
+  let resolved;
+  try {
+    resolved = resolveModel(model);
+  } catch (resolveError) {
+    if (resolveError instanceof ApiKeyMissingError) {
+      return new Response(JSON.stringify({ error: resolveError.message }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
-      },
-    );
+      });
+    }
+    if (resolveError instanceof ModelNotFoundError) {
+      return new Response(JSON.stringify({ error: resolveError.message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw resolveError;
   }
 
-  // Parse model ID - format can be "model-name" or "model-name:reasoning_effort"
-  const [modelName, reasoningEffort] = model.split(":");
+  const { model: targetModel, reasoningEffort, supportsReasoning } = resolved;
 
-  const openai = createOpenAI({ apiKey });
+  // Lightweight model used for validation / skill detection (configured via `auxModel`).
+  const aux = resolveAuxModel();
 
   // Validate the prompt first (skip for follow-ups with existing code)
-  if (!isFollowUp) {
+  if (!isFollowUp && aux) {
     try {
       const validationResult = await generateObject({
-        model: openai("gpt-5.2"),
+        model: aux.model,
         system: VALIDATION_PROMPT,
         prompt: `User prompt: "${prompt}"`,
         schema: z.object({ valid: z.boolean() }),
@@ -355,19 +369,21 @@ export async function POST(req: Request) {
 
   // Detect which skills apply to this prompt
   let detectedSkills: SkillName[] = [];
-  try {
-    const skillResult = await generateObject({
-      model: openai("gpt-5.2"),
-      system: SKILL_DETECTION_PROMPT,
-      prompt: `User prompt: "${prompt}"`,
-      schema: z.object({
-        skills: z.array(z.enum(SKILL_NAMES)),
-      }),
-    });
-    detectedSkills = skillResult.object.skills;
-    console.log("Detected skills:", detectedSkills);
-  } catch (skillError) {
-    console.error("Skill detection error:", skillError);
+  if (aux) {
+    try {
+      const skillResult = await generateObject({
+        model: aux.model,
+        system: SKILL_DETECTION_PROMPT,
+        prompt: `User prompt: "${prompt}"`,
+        schema: z.object({
+          skills: z.array(z.enum(SKILL_NAMES)),
+        }),
+      });
+      detectedSkills = skillResult.object.skills;
+      console.log("Detected skills:", detectedSkills);
+    } catch (skillError) {
+      console.error("Skill detection error:", skillError);
+    }
   }
 
   // Filter out skills that were already used in the conversation to avoid redundant context
@@ -480,7 +496,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
         "Follow-up edit with prompt:",
         prompt,
         "model:",
-        modelName,
+        model,
         "skills:",
         detectedSkills.length > 0 ? detectedSkills.join(", ") : "general",
         frameImages && frameImages.length > 0
@@ -510,7 +526,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
       ];
 
       const editResult = await generateObject({
-        model: openai(modelName),
+        model: targetModel,
         system: FOLLOW_UP_SYSTEM_PROMPT,
         messages: editMessages,
         schema: FollowUpResponseSchema,
@@ -564,7 +580,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
           skills: detectedSkills,
           editType,
           edits: appliedEdits,
-          model: modelName,
+          model,
         },
       };
 
@@ -613,23 +629,24 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
     ];
 
     const result = streamText({
-      model: openai(modelName),
+      model: targetModel,
       system: enhancedSystemPrompt,
       messages: initialMessages,
-      ...(reasoningEffort && {
-        providerOptions: {
-          openai: {
-            reasoningEffort: reasoningEffort,
+      ...(supportsReasoning &&
+        reasoningEffort && {
+          providerOptions: {
+            openai: {
+              reasoningEffort: reasoningEffort,
+            },
           },
-        },
-      }),
+        }),
     });
 
     console.log(
       "Generating React component with prompt:",
       prompt,
       "model:",
-      modelName,
+      model,
       "skills:",
       detectedSkills.length > 0 ? detectedSkills.join(", ") : "general",
       reasoningEffort ? `reasoning_effort: ${reasoningEffort}` : "",

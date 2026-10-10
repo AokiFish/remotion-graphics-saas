@@ -21,6 +21,15 @@ interface FailedEditInfo {
   new_string: string;
 }
 
+interface StreamEvent {
+  type: string;
+  skills?: string[];
+  delta?: string;
+  error?: unknown;
+  errorType?: string;
+  failedEdit?: FailedEditInfo;
+}
+
 interface GenerationCallbacks {
   onCodeGenerated?: (code: string) => void;
   onStreamingChange?: (isStreaming: boolean) => void;
@@ -141,7 +150,10 @@ export function useGenerationApi(): UseGenerationApiReturn {
             onErrorMessage?.(errorMessage, "validation");
             return;
           }
-          throw new Error(errorMessage);
+          // Surface expected API errors via callbacks instead of throwing,
+          // so they render as a friendly message rather than a console error.
+          onError?.(errorMessage, "api");
+          return;
         }
 
         const contentType = response.headers.get("content-type") || "";
@@ -161,7 +173,10 @@ export function useGenerationApi(): UseGenerationApiReturn {
 
         // Handle SSE stream response
         const reader = response.body?.getReader();
-        if (!reader) throw new Error("No response body");
+        if (!reader) {
+          onError?.("No response body received from the server.", "api");
+          return;
+        }
 
         const decoder = new TextDecoder();
         let accumulatedText = "";
@@ -178,35 +193,55 @@ export function useGenerationApi(): UseGenerationApiReturn {
 
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6);
-            if (data === "[DONE]") continue;
+            const raw = line.slice(6).trim();
+            if (!raw || raw === "[DONE]") continue;
 
+            let event: StreamEvent;
             try {
-              const event = JSON.parse(data);
-              if (event.type === "metadata") {
-                streamMetadata = {
-                  ...streamMetadata,
-                  skills: event.skills,
-                };
-                onPendingMessage?.(event.skills);
-              } else if (event.type === "reasoning-start") {
-                onStreamPhaseChange?.("reasoning");
-              } else if (event.type === "text-start") {
-                onStreamPhaseChange?.("generating");
-              } else if (event.type === "text-delta") {
-                accumulatedText += event.delta;
-                const codeToShow = stripMarkdownFences(accumulatedText);
-                onCodeGenerated?.(codeToShow);
-              } else if (event.type === "error") {
-                throw new Error(event.error);
+              event = JSON.parse(raw) as StreamEvent;
+            } catch {
+              // Ignore partial/malformed chunks; the next chunk completes them.
+              continue;
+            }
+
+            if (event.type === "metadata") {
+              streamMetadata = { ...streamMetadata, skills: event.skills };
+              onPendingMessage?.(event.skills);
+            } else if (event.type === "reasoning-start") {
+              onStreamPhaseChange?.("reasoning");
+            } else if (event.type === "text-start") {
+              onStreamPhaseChange?.("generating");
+            } else if (event.type === "text-delta") {
+              accumulatedText += event.delta ?? "";
+              onCodeGenerated?.(stripMarkdownFences(accumulatedText));
+            } else if (event.type === "error") {
+              // Surface stream errors through callbacks instead of throwing,
+              // so they appear as a friendly message (no console error).
+              // Extract the real reason from whatever shape the SDK/provider
+              // sends, so it never falls back to a generic "Generation failed".
+              const err = event.error;
+              let message = "Generation failed";
+              if (typeof err === "string") {
+                message = err;
+              } else if (err && typeof err === "object") {
+                const o = err as Record<string, unknown>;
+                if (typeof o.message === "string") message = o.message;
+                else if (o.error && typeof o.error === "object") {
+                  const inner = o.error as Record<string, unknown>;
+                  if (typeof inner.message === "string") message = inner.message;
+                } else if (typeof o.error === "string") message = o.error;
+                else message = JSON.stringify(err);
               }
-            } catch (parseError) {
-              if (
-                parseError instanceof Error &&
-                parseError.message !== "Unexpected token"
-              ) {
-                throw parseError;
-              }
+              const rawType = event.errorType;
+              const msgType: "validation" | "edit_failed" | "api" =
+                rawType === "validation"
+                  ? "validation"
+                  : rawType === "edit_failed"
+                    ? "edit_failed"
+                    : "api";
+              onError?.(message, msgType === "edit_failed" ? "validation" : msgType, event.failedEdit);
+              onErrorMessage?.(message, msgType, event.failedEdit);
+              return;
             }
           }
         }

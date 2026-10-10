@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/select";
 import { captureFrame } from "@/helpers/capture-frame";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
-import { MODELS, type ModelId } from "@/types/generation";
+import type { ModelOption } from "@/hooks/useModels";
+import type { ModelId } from "@/types/generation";
 import { ArrowUp, Camera, Paperclip, X } from "lucide-react";
 import { useEffect, useState, type ComponentType } from "react";
 
@@ -21,6 +22,8 @@ interface ChatInputProps {
   model: ModelId;
   onModelChange: (model: ModelId) => void;
   isLoading: boolean;
+  /** Selectable models fetched from /api/models. */
+  models: ModelOption[];
   onSubmit: (attachedImages?: string[]) => void;
   // Frame capture props
   Component?: ComponentType | null;
@@ -36,6 +39,7 @@ export function ChatInput({
   onModelChange,
   isLoading,
   onSubmit,
+  models,
   Component,
   fps = 30,
   durationInFrames = 150,
@@ -188,7 +192,7 @@ export function ChatInput({
                 <SelectValue className="truncate" />
               </SelectTrigger>
               <SelectContent className="bg-background-elevated border-border">
-                {MODELS.map((m) => (
+                {models.map((m) => (
                   <SelectItem
                     key={m.id}
                     value={m.id}

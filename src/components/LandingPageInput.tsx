@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/select";
 import { examplePrompts } from "@/examples/prompts";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
-import { MODELS, type ModelId } from "@/types/generation";
+import { useModels } from "@/hooks/useModels";
+import type { ModelId } from "@/types/generation";
 import {
   ArrowUp,
   BarChart3,
@@ -51,7 +52,13 @@ export function LandingPageInput({
   showCodeExamplesLink = false,
 }: LandingPageInputProps) {
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState<ModelId>("gpt-5.2:low");
+  const { models, default: defaultModel } = useModels();
+  const [model, setModel] = useState<ModelId>("");
+
+  // Select the configured default model once the list loads.
+  useEffect(() => {
+    if (!model && defaultModel) setModel(defaultModel);
+  }, [defaultModel, model]);
   const {
     attachedImages,
     isDragging,
@@ -177,7 +184,7 @@ export function LandingPageInput({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-background-elevated border-border">
-                {MODELS.map((m) => (
+                {models.map((m) => (
                   <SelectItem
                     key={m.id}
                     value={m.id}
